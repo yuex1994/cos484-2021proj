@@ -6,12 +6,13 @@ import regex as re
 import warnings
 
 from .constants import GPT2_TOKENIZER_LEN
-from .paths import OFFICIAL_GPT2_ENCODER_DIR
+from .paths import OFFICIAL_GPT2_ENCODER_DIR, OFFICIAL_ROBERTA_ENCODER_DIR
 from .official_gpt2_encoder.encoder import Encoder as OfficialEncoder
 
 class Tokenizer(Enum):
   CUSTOM = 0
   GPT2 = 1
+  ROBERTA = 2
 
 DEFAULT_TOKENIZER = Tokenizer.GPT2
 
@@ -52,6 +53,16 @@ def _get_tokenizer_state(tokenizer):
       if len(_CUSTOM_ID_TO_TOKEN) != len(CUSTOM_TOKEN_TO_ID):
         raise ValueError('Duplicate tokens')
       _TOKENIZER_TO_STATE[tokenizer] = (_CUSTOM_ID_TO_TOKEN, CUSTOM_TOKEN_TO_ID)
+    elif tokenizer == Tokenizer.ROBERTA:
+      with open(os.path.join(OFFICIAL_ROBERTA_ENCODER_DIR, 'vocab.json'), 'r') as f:
+        encoder_json = json.load(f)
+      with open(os.path.join(OFFICIAL_ROBERTA_ENCODER_DIR, 'merges.txt'), 'r', encoding='utf-8') as f:
+        bpe_data = f.read()
+      bpe_merges = [tuple(merge_str.split()) for merge_str in bpe_data.split('\n')[1:-1]]
+      official_encoder = OfficialEncoder(
+          encoder=encoder_json,
+          bpe_merges=bpe_merges)
+      _TOKENIZER_TO_STATE[tokenizer] = official_encoder
     else:
       assert False
 
@@ -70,6 +81,11 @@ def update_tokenizer(additional_ids_to_tokens, tokenizer=DEFAULT_TOKENIZER):
     state.encoder.update(additional_tokens_to_ids)
     state.decoder.update(additional_ids_to_tokens)
     vocab_size_after = len(state.encoder)
+  elif tokenizer == Tokenizer.ROBERTA:
+    vocab_size_before = len(state.encoder)
+    state.encoder.update(additional_tokens_to_ids)
+    state.decoder.update(additional_ids_to_tokens)
+    vocab_size_after = len(state.encoder)    
   elif tokenizer == Tokenizer.CUSTOM:
     raise NotImplementedError()
   else:
@@ -93,6 +109,15 @@ def tokenize(s, tokenizer=DEFAULT_TOKENIZER):
       tokens_ids.extend(token_ids)
     raw_tokens = [state.decoder[token_id] for token_id in tokens_ids]
     tokens = [bytearray([state.byte_decoder[c] for c in token]).decode('utf-8', errors=state.errors) for token in raw_tokens]
+  elif tokenizer == Tokenizer.ROBERTA:
+    tokens_regex = re.findall(state.pat, s)
+    tokens_ids = []
+    for token in tokens_regex:
+      token = ''.join(state.byte_encoder[b] for b in token.encode('utf-8'))
+      token_ids = [state.encoder[bpe_token] for bpe_token in state.bpe(token).split(' ')]
+      tokens_ids.extend(token_ids)
+    raw_tokens = [state.decoder[token_id] for token_id in tokens_ids]
+    tokens = [bytearray([state.byte_decoder[c] for c in token]).decode('utf-8', errors=state.errors) for token in raw_tokens]    
   elif tokenizer == Tokenizer.CUSTOM:
     tokens = s.strip().split()
   else:
@@ -109,6 +134,11 @@ def tokens_to_ids(tokens, tokenizer=DEFAULT_TOKENIZER):
     for token in tokens:
       token = ''.join(state.byte_encoder[b] for b in token.encode('utf-8'))
       tokens_ids.extend(state.encoder[bpe_token] for bpe_token in state.bpe(token).split(' '))
+  elif tokenizer == Tokenizer.ROBERTA:
+    tokens_ids = []
+    for token in tokens:
+      token = ''.join(state.byte_encoder[b] for b in token.encode('utf-8'))
+      tokens_ids.extend(state.encoder[bpe_token] for bpe_token in state.bpe(token).split(' '))    
   elif tokenizer == Tokenizer.CUSTOM:
     tokens_ids = [state[1][t] for t in tokens]
   else:
@@ -126,6 +156,9 @@ def ids_to_tokens(tokens_ids, tokenizer=DEFAULT_TOKENIZER):
   if tokenizer == Tokenizer.GPT2:
     tokens = [state.decoder[token_id] for token_id in tokens_ids]
     tokens = [bytearray([state.byte_decoder[c] for c in token]).decode('utf-8', errors=state.errors) for token in tokens]
+  elif tokenizer == Tokenizer.ROBERTA:
+    tokens = [state.decoder[token_id] for token_id in tokens_ids]
+    tokens = [bytearray([state.byte_decoder[c] for c in token]).decode('utf-8', errors=state.errors) for token in tokens]    
   elif tokenizer == Tokenizer.CUSTOM:
     tokens = [state[0][t] for t in tokens_ids]
   else:
@@ -139,6 +172,8 @@ def ids_to_tokens(tokens_ids, tokenizer=DEFAULT_TOKENIZER):
 
 def detokenize(tokens, tokenizer=DEFAULT_TOKENIZER):
   if tokenizer == Tokenizer.GPT2:
+    s = ''.join(tokens)
+  elif tokenizer == Tokenizer.ROBERTA:
     s = ''.join(tokens)
   elif tokenizer == Tokenizer.CUSTOM:
     s = ' '.join(tokens)
@@ -160,6 +195,8 @@ def vocab_size(tokenizer=DEFAULT_TOKENIZER):
   state = _get_tokenizer_state(tokenizer)
 
   if tokenizer == Tokenizer.GPT2:
+    vocab_size = len(state.encoder)
+  elif tokenizer == Tokenizer.ROBERTA:
     vocab_size = len(state.encoder)
   elif tokenizer == Tokenizer.CUSTOM:
     vocab_size = len(state[0])

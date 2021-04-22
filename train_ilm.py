@@ -12,7 +12,8 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler, TensorDataset)
 from tqdm import tqdm
-from transformers import GPT2Config, GPT2LMHeadModel, AdamW, CONFIG_NAME, WEIGHTS_NAME
+from transformers import GPT2Config, GPT2LMHeadModel, AdamW, CONFIG_NAME, WEIGHTS_NAME, BartConfig, BartForConditionalGeneration
+
 try:
   import wandb
 except:
@@ -263,6 +264,8 @@ def tts_to_labels(inputs, tts, label_tts):
 
 
 def train(args):
+
+  print("start 0 yxdbg")
   # Init device
   n_gpu = torch.cuda.device_count()
   if n_gpu == 0:
@@ -277,7 +280,8 @@ def train(args):
 
   # Create training dir
   os.makedirs(args.train_dir, exist_ok=True)
-  resuming = os.path.exists(out_fn_to_fp('step.pkl'))
+  #resuming = os.path.exists(out_fn_to_fp('step.pkl'))
+  resuming = False;
 
   # Create tokenizer
   tokenizer = ilm.tokenize_util.Tokenizer[args.tokenizer_name.upper()]
@@ -305,9 +309,13 @@ def train(args):
   with open(out_fn_to_fp('additional_ids_to_tokens.pkl'), 'wb') as f:
     pickle.dump(additional_ids_to_tokens, f)
 
+  print("start 1 yxdbg")
+
   # Load training data
   if not args.eval_only:
     print('Loading training data')
+
+    print("start 2 yxdbg")
     loaded_from_cache = False
     if args.data_cache:
       try:
@@ -333,6 +341,7 @@ def train(args):
           pickle.dump(train_num_docs, f)
     train_tt_to_count = {TargetType(k):v for k, v in zip(*np.unique(train_tts, return_counts=True))}
     print(train_tt_to_count)
+
     num_unmasked = train_tt_to_count.get(TargetType.CONTEXT, 0)
     num_masked = train_tt_to_count.get(TargetType.INFILL, 0)
     print('Mask rate (tokens): {:.4f}'.format(num_masked / (num_unmasked + num_masked)))
@@ -403,6 +412,11 @@ def train(args):
   if args.model_name in ilm.constants.GPT2_MODEL_NAMES:
     model_type = GPT2LMHeadModel
     cfg_type = GPT2Config
+  elif args.model_name in ilm.constants.BART_MODEL_NAMES:
+    print("bart")
+    model_type = BartForConditionalGeneration
+    cfg_type = BartConfig
+    
   if resuming:
     print('from saved checkpoint (resuming)')
     model = model_type.from_pretrained(args.train_dir)
@@ -529,7 +543,12 @@ def train(args):
           for i, eval_batch in enumerate(eval_dataloader):
             with torch.no_grad():
               eval_inputs, eval_tts = tuple(t.to(device) for t in eval_batch)
-              eval_logits, _ = model(eval_inputs)
+              # print("yxdbg")
+              # print(eval_inputs)
+              # print(model.named_parameters)
+              # print(dir(model))
+              # print(eval_inputs.shape)
+              eval_logits =  model(eval_inputs).logits
               eval_logits_relevant = eval_logits[:, :-1].contiguous().view(-1, eval_logits.shape[-1])
 
               for tag, tts in [
@@ -581,7 +600,7 @@ def train(args):
         # TODO: Option to skip training on INFILL_REDUNDANT?
         # NOTE: This would give Task.NAIVE/Task.LM less supervision overall but put them more in line with the supervision that Task.ILM and Task.NO_CONTEXT_ILM receive
         labels_infill = tts_to_labels(inputs, tts, [TargetType.INFILL, TargetType.INFILL_SPECIAL, TargetType.INFILL_REDUNDANT])
-        logits, _ = model(inputs)
+        logits  = model(inputs).logits
         logits_relevant = logits[:, :-1].contiguous().view(-1, logits.shape[-1])
         loss_context = F.cross_entropy(
             logits_relevant,
@@ -638,6 +657,7 @@ def train(args):
 
 if __name__ == '__main__':
   from argparse import ArgumentParser
+  print("start")
 
   parser = ArgumentParser()
 
@@ -695,22 +715,27 @@ if __name__ == '__main__':
       wandb=False,
       wandb_project_name='ilm',
       mask_cls='ilm.mask.hierarchical.MaskHierarchical',
-      tokenizer_name='gpt2',
+      # tokenizer_name='gpt2',
+      tokenizer_name='roberta',
       tokenizer_custom_vocab_fp=None,
       task='ilm',
-      data_cache=True,
+      data_cache=True,  
+      # data_cache=False,
       data_loader_num_workers=4,
-      model_name='gpt2',
+      # model_name='gpt2',
+      model_name='facebook/bart-base',      
       train_examples_tag='train',
       train_max_num_examples=None,
       train_num_epochs=None,
-      train_from_scratch=False,
+      train_from_scratch=True,
       train_batch_size=8,
       train_batch_accumulation=3,
       train_sequence_length=256,
-      train_skip_naive_incomplete=False,
-      train_eval_secs=360,
-      train_summary_secs=360,
+      # train_sequence_length=200,
+      # train_skip_naive_incomplete=False,
+      train_skip_naive_incomplete=True,
+      train_eval_secs=30,
+      train_summary_secs=30,
       train_context=True,
       train_learning_rate=5e-5,
       train_weight_decay=0.,
@@ -720,8 +745,10 @@ if __name__ == '__main__':
       eval_examples_tag='valid',
       eval_max_num_examples=None,
       eval_batch_size=8,
+      # eval_sequence_length=200,
       eval_sequence_length=256,
-      eval_skip_naive_incomplete=False)
+      # eval_skip_naive_incomplete=False)
+      eval_skip_naive_incomplete=True)
   
   args = parser.parse_args()
 

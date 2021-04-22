@@ -60,7 +60,7 @@ def arxiv_cs_abstracts(split='train', data_dir=None, attrs=['title', 'authors', 
   if data_dir is None:
     data_dir = ABS_DIR
 
-  with open(os.path.join(data_dir, 'arxiv_cs_abstracts.txt'), 'r') as f:
+  with open(os.path.join(data_dir, 'arxiv_cs_abstracts.txt'), 'r', encoding='utf-8') as f:
     raw = f.read().split('\n\n\n')
 
   abstracts = []
@@ -93,19 +93,19 @@ def roc_stories(split='train', data_dir=None, with_titles=True, exclude_nonstand
     data_dir = ROC_STORIES_DIR
 
   if split == 'train':
-    with open(os.path.join(data_dir, 'train_title.txt'), 'r') as f:
+    with open(os.path.join(data_dir, 'train_title.txt'), 'r', encoding='utf-8') as f:
       stories = f.read().split('\n\n\n')
     titled = True
   elif split == 'valid':
-    with open(os.path.join(data_dir, 'valid.txt'), 'r') as f:
+    with open(os.path.join(data_dir, 'valid.txt'), 'r', encoding='utf-8') as f:
       stories = f.read().split('\n\n\n')
     titled = False
   elif split == 'test':
-    with open(os.path.join(data_dir, 'test.txt'), 'r') as f:
+    with open(os.path.join(data_dir, 'test.txt'), 'r', encoding='utf-8') as f:
       stories = f.read().split('\n\n\n')
     titled = False
   elif split == 'test_hand_title':
-    with open(os.path.join(data_dir, 'test_hand_title.txt'), 'r') as f:
+    with open(os.path.join(data_dir, 'test_hand_title.txt'), 'r', encoding='utf-8') as f:
       stories = f.read().split('\n\n\n')
     titled = True
 
